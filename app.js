@@ -21,6 +21,7 @@ const formError = byId('form-error');
 const notice = byId('notice');
 const save = byId('save');
 const chart = byId('chart');
+const miniChart = byId('record-mini-chart');
 const pointSelect = byId('chart-point');
 const formatter = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 });
 const dateFormatter = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' });
@@ -156,6 +157,7 @@ function fillExercises(groupSelect, exerciseSelect, preferred) {
 
 function fillForm(preferredEntry) {
   const item = exerciseById.get(exercise.value);
+  renderRecordInsights(item);
   byId('empty-group-add').hidden = !!item;
   save.disabled = !storageReady || !item;
   if (!item) {
@@ -187,7 +189,7 @@ function useEntry(entry) {
   editing = entry?.id ?? null;
   byId('record-title').textContent = editing ? 'Редактировать' : 'Запись';
   byId('cancel-edit').hidden = !editing;
-  save.textContent = editing ? 'Сохранить изменения' : 'Сохранить запись';
+  save.textContent = editing ? 'Сохранить изменения' : 'Записать';
   if (entry) {
     const item = exerciseById.get(entry.exerciseId);
     group.value = item.groupId;
@@ -213,6 +215,7 @@ function openPage(page) {
   }
   if (page === 'progress') renderProgress();
   if (page === 'journal') renderJournal();
+  if (page === 'record') renderRecordInsights();
   window.scrollTo({ top: 0 });
 }
 
@@ -284,6 +287,7 @@ function setMode(page, mode) {
     byId('record-form').hidden = byId('notice').hidden = body;
     byId('body-form').hidden = !body;
     byId('record-title').textContent = (body ? editingBody : editing) ? 'Редактировать' : 'Запись';
+    renderRecordInsights();
   } else {
     progressMode = mode;
     byId('progress-picker').hidden = body;
@@ -424,6 +428,7 @@ byId('catalog-form').addEventListener('submit', event => {
   else {
     byId('name-row').hidden = exerciseById.get(exercise.value)?.name !== null;
     nameField.required = !byId('name-row').hidden;
+    renderRecordInsights();
   }
   notice.textContent = adding ? 'Добавлено · ' + name : 'Новое название · ' + name;
   catalogDialog.close();
@@ -508,23 +513,137 @@ function renderJournal() {
   }
 }
 
-function renderProgress() {
-  const body = progressMode === 'body';
-  const item = exerciseById.get(progressExercise.value);
+function progressSeries(item, body = false) {
   const records = body ? weighIns : entries.filter(entry => entry.exerciseId === item?.id);
   const hasWeight = records.some(entry => entry.weight !== null);
   const metric = !item?.bodyweight || hasWeight || body ? 'weight' : 'reps';
-  chartUnit = metric === 'weight' ? 'кг' : 'повт.';
   const days = new Map();
   for (const entry of records) {
     const value = entry[metric];
     if (value === null) continue;
     const previous = days.get(entry.date);
-    const isNewer = !previous || entry.updatedAt > previous.entry.updatedAt;
+    const isNewer = previous && entry.updatedAt > previous.entry.updatedAt;
     if (!previous || (body ? isNewer : value > previous.value || (value === previous.value && isNewer)))
       days.set(entry.date, { value, entry });
   }
-  chartPoints = [...days.values()].sort((a, b) => a.entry.date.localeCompare(b.entry.date));
+  return {
+    points: [...days.values()].sort((a, b) => a.entry.date.localeCompare(b.entry.date)),
+    metric,
+    unit: metric === 'weight' ? 'кг' : 'повт.'
+  };
+}
+
+function recentExercises() {
+  const latest = new Map();
+  for (const entry of [...entries].sort(newestFirst)) {
+    if (!latest.has(entry.exerciseId)) latest.set(entry.exerciseId, entry);
+    if (latest.size >= 3) break;
+  }
+  return [...latest.values()];
+}
+
+function selectRecent(item) {
+  group.value = item.groupId;
+  fillExercises(group, exercise, item.id);
+  notice.textContent = '';
+  fillForm();
+  if (window.scrollY > 180) byId('record-title').scrollIntoView({ block: 'start' });
+}
+
+function renderRecordInsights(item = exerciseById.get(exercise.value)) {
+  const wrapper = byId('record-insights');
+  wrapper.hidden = recordMode !== 'workout' || !!editing;
+  if (wrapper.hidden) return;
+
+  const recent = recentExercises();
+  byId('recents').hidden = !recent.length;
+  byId('recents-list').replaceChildren(...recent.map(entry => {
+    const exerciseItem = exerciseById.get(entry.exerciseId);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'recent-workout';
+    const name = document.createElement('strong');
+    name.textContent = exerciseItem.name ?? entry.name;
+    const result = document.createElement('span');
+    result.textContent = entry.weight === null ? entry.reps + ' повт.' : formatter.format(entry.weight) + ' кг';
+    button.setAttribute('aria-pressed', String(item?.id === exerciseItem.id));
+    button.append(name, result);
+    button.addEventListener('click', () => {
+      selectRecent(exerciseItem);
+      exercise.focus({ preventScroll: true });
+    });
+    return button;
+  }));
+
+  const { points, unit } = progressSeries(item);
+  const visible = points.slice(-8);
+  const trend = byId('record-trend');
+  trend.hidden = visible.length < 2;
+  wrapper.hidden = !recent.length && trend.hidden;
+  if (trend.hidden) return;
+  const first = visible[0];
+  const last = visible.at(-1);
+  const diff = Math.round((last.value - first.value) * 1000) / 1000;
+  byId('record-trend-name').textContent = exerciseName(item);
+  byId('record-trend-value').textContent = formatter.format(last.value) + ' ' + unit;
+  byId('record-trend-change').textContent = (diff > 0 ? '+' : '') + formatter.format(diff || 0) + ' ' + unit;
+  byId('record-trend-first').textContent = shortDate.format(new Date(first.entry.date + 'T12:00:00'));
+  byId('record-trend-last').textContent = shortDate.format(new Date(last.entry.date + 'T12:00:00'));
+  byId('record-trend-open').setAttribute('aria-label', 'Подробный график · ' + exerciseName(item) + ' · ' +
+    byId('record-trend-value').textContent + ' · изменение ' + byId('record-trend-change').textContent);
+  drawMiniChart(visible);
+}
+
+function drawMiniChart(points) {
+  const { width, height } = miniChart.getBoundingClientRect();
+  if (!width || !height) return;
+  const scale = window.devicePixelRatio || 1;
+  miniChart.width = Math.round(width * scale);
+  miniChart.height = Math.round(height * scale);
+  const ctx = miniChart.getContext('2d');
+  ctx.scale(scale, scale);
+  const timestamps = points.map(({ entry }) => Date.parse(entry.date));
+  const duration = timestamps.at(-1) - timestamps[0];
+  const values = points.map(({ value }) => value);
+  const low = Math.min(...values), high = Math.max(...values);
+  const flat = high === low;
+  const coordinates = values.map((value, index) => ({
+    x: 5 + (width - 10) * ((timestamps[index] - timestamps[0]) / duration),
+    y: flat ? height / 2 : height - 9 - (height - 22) * (value - low) / (high - low)
+  }));
+  const start = coordinates[0], end = coordinates.at(-1);
+  const line = () => {
+    ctx.moveTo(start.x, start.y);
+    for (const point of coordinates.slice(1)) ctx.lineTo(point.x, point.y);
+  };
+  const fade = ctx.createLinearGradient(0, 0, 0, height);
+  fade.addColorStop(0, '#d1fa703d');
+  fade.addColorStop(1, '#d1fa7000');
+  ctx.fillStyle = fade;
+  ctx.beginPath();
+  line();
+  ctx.lineTo(end.x, height);
+  ctx.lineTo(start.x, height);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#d1fa70';
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = ctx.lineCap = 'round';
+  ctx.beginPath();
+  line();
+  ctx.stroke();
+  ctx.fillStyle = '#d1fa70';
+  ctx.beginPath();
+  ctx.arc(end.x, end.y, 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function renderProgress() {
+  const body = progressMode === 'body';
+  const item = exerciseById.get(progressExercise.value);
+  const { points, metric, unit } = progressSeries(item, body);
+  chartPoints = points;
+  chartUnit = unit;
   pointPositions = [];
   const empty = byId('progress-empty');
   empty.hidden = chartPoints.length > 0;
@@ -583,9 +702,9 @@ function drawChart() {
   for (let index = 0; index < 5; index++) {
     const ratio = index / 4;
     const y = bottom - ratio * (bottom - top);
-    ctx.strokeStyle = '#353b32';
+    ctx.strokeStyle = '#343942';
     ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke();
-    ctx.fillStyle = '#aab1a5';
+    ctx.fillStyle = '#abb4bf';
     ctx.fillText(formatter.format(Math.round((low + ratio * (high - low)) * 10) / 10), 0, y);
   }
   const firstDate = shortDate.format(new Date(chartPoints[0].entry.date + 'T12:00:00'));
@@ -612,11 +731,17 @@ chart.addEventListener('click', event => {
   pointSelect.value = String(index);
   renderSelectedPoint();
 });
-window.addEventListener('resize', () => { if (activePage === 'progress') drawChart(); });
+byId('record-trend-open').addEventListener('click', () => openPage('progress'));
+window.addEventListener('resize', () => {
+  if (activePage === 'progress') drawChart();
+  if (activePage === 'record' && !byId('record-insights').hidden && !byId('record-trend').hidden)
+    drawMiniChart(progressSeries(exerciseById.get(exercise.value)).points.slice(-8));
+});
 window.addEventListener('storage', event => {
   if (![storageKey, legacyEntriesKey, legacyStarterKey, null].includes(event.key)) return;
   restoreDiary();
   fillSelectors();
+  if (activePage === 'record') renderRecordInsights();
   if (activePage === 'journal') renderJournal();
   if (activePage === 'progress') renderProgress();
 });

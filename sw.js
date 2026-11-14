@@ -1,4 +1,4 @@
-const version = 'ff2ff165a07fc3d1';
+const version = '2766bc31ce0e59b2';
 const cacheName = 'podhod-shell-' + version;
 const root = new URL('./', self.registration.scope);
 const files = ['', 'style.css?v=' + version, 'app.js?v=' + version, 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];

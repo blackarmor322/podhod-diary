@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#111411">
+  <meta name="theme-color" content="#121418">
   <meta name="description" content="Личный дневник силовых тренировок">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./style.css?v=ff2ff165a07fc3d1">
-  <script type="module" src="./app.js?v=ff2ff165a07fc3d1"></script>
+  <link rel="stylesheet" href="./style.css?v=2766bc31ce0e59b2">
+  <script type="module" src="./app.js?v=2766bc31ce0e59b2"></script>
   <title>Подход — дневник тренировок</title>
 </head>
 <body>
@@ -27,7 +27,7 @@
           <button type="button" data-mode="body" aria-pressed="false">Вес тела</button>
         </div>
         <form id="record-form" novalidate>
-          <div class="surface exercise-card">
+          <div class="surface exercise-card workout-picker">
             <div class="picker-row"><label class="row"><span>Группа</span><select id="group" required aria-label="Группа мышц"></select></label><button type="button" class="picker-action" id="manage-group" aria-label="Управление группами">•••</button></div>
             <div class="picker-row"><label class="row"><span>Упражнение</span><select id="exercise" required aria-label="Упражнение"></select></label><button type="button" class="picker-action" id="manage-exercise" aria-label="Управление упражнениями">•••</button></div>
             <label id="name-row" class="row" hidden><span>Название</span><input id="exercise-name" maxlength="70" placeholder="Введи название" autocomplete="off"></label>
@@ -42,7 +42,7 @@
           <label class="row surface date-row"><span>Дата</span><input id="date" type="date" min="1900-01-01" max="9999-12-31" required></label>
           <p id="form-error" class="error" role="alert" hidden></p>
           <button type="button" id="cancel-edit" class="secondary" hidden>Отменить редактирование</button>
-          <div class="save-dock"><button id="save" class="primary" type="submit" disabled>Сохранить запись</button></div>
+          <div class="save-dock"><button id="save" class="primary" type="submit" disabled>Записать</button></div>
         </form>
         <p id="notice" class="notice" role="status"></p>
         <form id="body-form" novalidate hidden>
@@ -56,6 +56,23 @@
           <div class="save-dock"><button id="save-body" class="primary" type="submit">Сохранить вес</button></div>
           <p id="body-notice" class="notice" role="status"></p>
         </form>
+        <div id="record-insights" hidden>
+          <section id="recents" class="record-section" aria-labelledby="recents-title" hidden>
+            <h2 id="recents-title">Недавние упражнения</h2>
+            <div id="recents-list" class="recents-list"></div>
+          </section>
+          <section id="record-trend" class="record-section" aria-labelledby="record-trend-title" hidden>
+            <h2 id="record-trend-title">Динамика упражнения</h2>
+            <button id="record-trend-open" class="trend-card" type="button" aria-label="Открыть подробный график">
+              <span class="trend-head">
+                <span><span id="record-trend-name" class="trend-label"></span><strong id="record-trend-value"></strong></span>
+                <span id="record-trend-change" class="trend-change"></span>
+              </span>
+              <canvas id="record-mini-chart" aria-hidden="true"></canvas>
+              <span class="trend-dates"><span id="record-trend-first"></span><span id="record-trend-last"></span></span>
+            </button>
+          </section>
+        </div>
       </section>
 
       <section id="progress-page" aria-labelledby="progress-title" hidden>
