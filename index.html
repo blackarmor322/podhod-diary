@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#141614">
+  <meta name="theme-color" content="#111411">
   <meta name="description" content="Личный дневник силовых тренировок">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./style.css">
-  <script type="module" src="./app.js"></script>
+  <link rel="stylesheet" href="./style.css?v=ff2ff165a07fc3d1">
+  <script type="module" src="./app.js?v=ff2ff165a07fc3d1"></script>
   <title>Подход — дневник тренировок</title>
 </head>
 <body>
@@ -22,12 +22,17 @@
     <main>
       <section id="record-page" aria-labelledby="record-title">
         <h1 id="record-title">Запись</h1>
+        <div class="segments" id="record-mode" role="group" aria-label="Что записать">
+          <button type="button" data-mode="workout" aria-pressed="true">Тренировка</button>
+          <button type="button" data-mode="body" aria-pressed="false">Вес тела</button>
+        </div>
         <form id="record-form" novalidate>
           <div class="surface exercise-card">
-            <label class="row"><span>Группа</span><select id="group" required aria-label="Группа мышц"></select></label>
-            <label class="row"><span>Упражнение</span><select id="exercise" required aria-label="Упражнение"></select></label>
+            <div class="picker-row"><label class="row"><span>Группа</span><select id="group" required aria-label="Группа мышц"></select></label><button type="button" class="picker-action" id="manage-group" aria-label="Управление группами">•••</button></div>
+            <div class="picker-row"><label class="row"><span>Упражнение</span><select id="exercise" required aria-label="Упражнение"></select></label><button type="button" class="picker-action" id="manage-exercise" aria-label="Управление упражнениями">•••</button></div>
             <label id="name-row" class="row" hidden><span>Название</span><input id="exercise-name" maxlength="70" placeholder="Введи название" autocomplete="off"></label>
           </div>
+          <button type="button" id="empty-group-add" class="secondary" hidden>Добавить упражнение</button>
           <p id="reference" class="reference" hidden></p>
           <div class="fields">
             <label class="metric"><span>Вес, кг</span><input id="weight" inputmode="decimal" autocomplete="off" maxlength="7" placeholder="—"></label>
@@ -40,17 +45,33 @@
           <div class="save-dock"><button id="save" class="primary" type="submit" disabled>Сохранить запись</button></div>
         </form>
         <p id="notice" class="notice" role="status"></p>
+        <form id="body-form" novalidate hidden>
+          <div class="surface body-card">
+            <label class="body-number"><span>Текущий вес, кг</span><input id="body-weight" inputmode="decimal" autocomplete="off" maxlength="8" placeholder="—" required></label>
+            <p id="body-reference" class="reference" hidden></p>
+          </div>
+          <label class="row surface date-row"><span>Дата</span><input id="body-date" type="date" min="1900-01-01" max="9999-12-31" required></label>
+          <p id="body-error" class="error" role="alert" hidden></p>
+          <button type="button" id="cancel-body-edit" class="secondary" hidden>Отменить редактирование</button>
+          <div class="save-dock"><button id="save-body" class="primary" type="submit">Сохранить вес</button></div>
+          <p id="body-notice" class="notice" role="status"></p>
+        </form>
       </section>
 
       <section id="progress-page" aria-labelledby="progress-title" hidden>
         <h1 id="progress-title">Прогресс</h1>
-        <div class="surface exercise-card">
+        <div class="segments" id="progress-mode" role="group" aria-label="Что показать">
+          <button type="button" data-mode="workout" aria-pressed="true">Упражнения</button>
+          <button type="button" data-mode="body" aria-pressed="false">Вес тела</button>
+        </div>
+        <div id="progress-picker" class="surface exercise-card">
           <label class="row"><span>Группа</span><select id="progress-group" aria-label="Группа мышц"></select></label>
           <label class="row"><span>Упражнение</span><select id="progress-exercise" aria-label="Упражнение"></select></label>
         </div>
         <div id="progress-summary" class="surface result-card" hidden>
           <div id="chart-caption" class="caption"></div>
           <div id="chart-metric" class="chart-metric"></div>
+          <p id="chart-change" class="chart-change" hidden></p>
           <canvas id="chart" height="238" role="img" aria-label="График результатов по датам"></canvas>
           <label id="point-row" class="row point-row" hidden><span>Дата на графике</span><select id="chart-point" aria-label="Дата на графике"></select></label>
           <p id="chart-details" class="chart-details"></p>
@@ -80,5 +101,21 @@
       <button type="button" class="tab" data-page="journal"><span class="symbol journal-symbol" aria-hidden="true"></span>Журнал</button>
     </nav>
   </div>
+  <dialog id="catalog-dialog" aria-labelledby="catalog-title">
+    <form id="catalog-form" novalidate>
+      <div class="dialog-header"><h2 id="catalog-title"></h2><button id="close-catalog" class="picker-action" type="button" aria-label="Закрыть">×</button></div>
+      <div id="catalog-actions" class="catalog-actions">
+        <button id="catalog-add" class="primary" type="button">Добавить</button>
+        <button id="catalog-rename" class="secondary" type="button">Переименовать</button>
+      </div>
+      <div id="catalog-fields" hidden>
+        <label class="dialog-label" for="catalog-name">Название</label>
+        <input id="catalog-name" class="dialog-input" maxlength="70" autocomplete="off">
+        <label id="bodyweight-option" class="check-row" hidden><input id="bodyweight-exercise" type="checkbox">Упражнение с весом тела</label>
+        <p id="catalog-error" class="error" role="alert" hidden></p>
+        <button class="primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>

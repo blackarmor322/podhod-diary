@@ -1,10 +1,13 @@
-const cacheName = 'podhod-shell-0a8b41bff12fad2d';
+const version = 'ff2ff165a07fc3d1';
+const cacheName = 'podhod-shell-' + version;
 const root = new URL('./', self.registration.scope);
-const files = ['', 'style.css', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
+const files = ['', 'style.css?v=' + version, 'app.js?v=' + version, 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 const shell = new Set(files.map(file => new URL(file, root).href));
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(cacheName).then(cache => cache.addAll([...shell])).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(
+    [...shell].map(url => new Request(url, { cache: 'reload' }))
+  )).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(
