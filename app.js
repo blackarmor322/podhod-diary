@@ -50,6 +50,11 @@ let catalogTrigger = null;
 let chartPoints = [];
 let pointPositions = [];
 let chartUnit = 'кг';
+let templates = [];
+let activeWorkout = null;
+let templateEditing = null;
+let templateExerciseIds = [];
+const templatesDialog = byId('templates-dialog');
 
 function catalogLists(value) {
   const groupList = new Map(baseGroups.map(item => [item.id, item]));
@@ -62,7 +67,7 @@ function catalogLists(value) {
 }
 
 function applyState(value) {
-  ({ entries, weighIns, catalog } = value);
+  ({ entries, weighIns, catalog, templates, activeWorkout } = value);
   starterValues = new Map(value.starterValues.map(item => [item.id, item]));
   ({ groups, exerciseById } = catalogLists(catalog));
 }
@@ -92,7 +97,7 @@ function restoreDiary() {
 
 function saveDiary(changes) {
   if (!storageReady) return false;
-  const value = { version: 2, entries, weighIns, catalog, starterValues: [...starterValues.values()], ...changes };
+  const value = { version: 2, entries, weighIns, catalog, templates, activeWorkout, starterValues: [...starterValues.values()], ...changes };
   try { localStorage.setItem(storageKey, JSON.stringify(value)); }
   catch { return false; }
   applyState(value);
@@ -132,6 +137,76 @@ function recentRecord(id) {
     .sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt - a.updatedAt)[0];
 }
 
+function clearAchievement() {
+  byId('record-achievement').hidden = true;
+}
+
+function bestResult(records, field) {
+  return records.reduce((best, entry) => {
+    if (!best || entry[field] > best[field] ||
+        (entry[field] === best[field] && entry.date < best.date)) return entry;
+    return best;
+  }, null);
+}
+
+function sameLoad(a, b) {
+  return (a.weight ?? 0) === (b.weight ?? 0) && a.sets === b.sets;
+}
+
+function repetitionLabel(entry) {
+  const load = entry.weight ? formatter.format(entry.weight) + ' кг' : 'с весом тела';
+  return entry.sets + ' подх. · ' + load;
+}
+
+function newRecords(entry, previous) {
+  const records = previous.filter(item => item.exerciseId === entry.exerciseId);
+  const weightBest = bestResult(records.filter(item => item.weight > 0), 'weight');
+  const repeatsBest = bestResult(records.filter(item => sameLoad(item, entry)), 'reps');
+  const result = [];
+  if (weightBest && entry.weight > weightBest.weight)
+    result.push(formatter.format(entry.weight) + ' кг · прежний максимум ' + formatter.format(weightBest.weight) + ' кг');
+  if (repeatsBest && entry.reps > repeatsBest.reps)
+    result.push(entry.reps + ' повт. всего за ' + repetitionLabel(entry) + ' · раньше ' + repeatsBest.reps);
+  return result;
+}
+
+function renderPersonalRecords(reference) {
+  const section = byId('personal-records');
+  const list = byId('records-list');
+  list.replaceChildren();
+  const records = entries.filter(entry => entry.exerciseId === reference?.exerciseId);
+  section.hidden = progressMode === 'body' || !records.length;
+  if (section.hidden) return;
+  const item = exerciseById.get(reference.exerciseId);
+  const weightBest = bestResult(records.filter(entry => entry.weight > 0), 'weight');
+  const repeatsBest = bestResult(records.filter(entry => sameLoad(entry, reference)), 'reps');
+  const cards = [];
+  if (weightBest) cards.push({
+    label: item.bodyweight ? 'Максимальный доп. вес' : 'Максимальный вес',
+    value: formatter.format(weightBest.weight) + ' кг',
+    detail: weightBest.sets + ' подх. · ' + weightBest.reps + ' повт. всего', entry: weightBest
+  });
+  if (repeatsBest) cards.push({
+    label: 'Повторений всего',
+    value: String(repeatsBest.reps), detail: repetitionLabel(repeatsBest), entry: repeatsBest
+  });
+  for (const card of cards) {
+    const panel = document.createElement('div');
+    panel.className = 'personal-best';
+    const label = document.createElement('span');
+    label.textContent = card.label;
+    const value = document.createElement('strong');
+    value.textContent = card.value;
+    const detail = document.createElement('p');
+    detail.textContent = card.detail;
+    const day = document.createElement('time');
+    day.dateTime = card.entry.date;
+    day.textContent = dateFormatter.format(new Date(card.entry.date + 'T12:00:00'));
+    panel.append(label, value, detail, day);
+    list.append(panel);
+  }
+}
+
 function exerciseName(item) {
   return item.name ?? recentRecord(item.id)?.name ?? starterFor(item).name ?? 'Без названия';
 }
@@ -156,6 +231,7 @@ function fillExercises(groupSelect, exerciseSelect, preferred) {
 }
 
 function fillForm(preferredEntry) {
+  clearAchievement();
   const item = exerciseById.get(exercise.value);
   renderRecordInsights(item);
   byId('empty-group-add').hidden = !!item;
@@ -195,9 +271,10 @@ function useEntry(entry) {
     group.value = item.groupId;
     fillExercises(group, exercise, item.id);
   } else {
-    date.value = today();
+    date.value = activeWorkout?.date ?? today();
   }
   fillForm(entry);
+  renderActiveWorkout();
 }
 
 function openPage(page) {
@@ -215,7 +292,10 @@ function openPage(page) {
   }
   if (page === 'progress') renderProgress();
   if (page === 'journal') renderJournal();
-  if (page === 'record') renderRecordInsights();
+  if (page === 'record') {
+    renderRecordInsights();
+    renderActiveWorkout();
+  }
   window.scrollTo({ top: 0 });
 }
 
@@ -231,11 +311,14 @@ function readRecord() {
   if (!/^\d{1,3}$/.test(sets.value) || Number(sets.value) < 1) return ['Введи число подходов.', sets];
   if (!/^\d{1,4}$/.test(reps.value) || Number(reps.value) < 1) return ['Введи общее число повторений.', reps];
   if (!validDate(dateValue)) return ['Выбери дату тренировки.', date];
+  const previous = editing ? entries.find(entry => entry.id === editing) : null;
+  const workoutId = editing ? previous?.workoutId : activeWorkout?.exerciseIds.includes(item.id) ? activeWorkout.id : null;
   return {
     id: editing ?? newId(),
     exerciseId: item.id, name: item.name ?? nameField.value.trim(), date: dateValue,
     weight: item.bodyweight && weightValue === 0 ? null : weightValue,
-    sets: Number(sets.value), reps: Number(reps.value), updatedAt: Date.now()
+    sets: Number(sets.value), reps: Number(reps.value), updatedAt: Date.now(),
+    ...(workoutId ? { workoutId } : {})
   };
 }
 
@@ -248,6 +331,7 @@ byId('record-form').addEventListener('submit', event => {
     entry[1].focus();
     return;
   }
+  const achievements = editing ? [] : newRecords(entry, entries);
   const nextEntries = [...entries.filter(previous => previous.id !== entry.id), entry];
   if (!persistEntries(nextEntries)) {
     showError('Не удалось сохранить запись на устройстве. Попробуй ещё раз.');
@@ -256,12 +340,15 @@ byId('record-form').addEventListener('submit', event => {
   fillExercises(group, exercise, entry.exerciseId);
   useEntry(null);
   notice.textContent = 'Сохранено · ' + entry.name + ' · ' + description(entry);
+  byId('record-achievement').hidden = !achievements.length;
+  byId('achievement-description').textContent = achievements.join(' · ');
   save.disabled = true;
 });
 
 byId('record-form').addEventListener('input', () => {
   save.disabled = !storageReady || !exercise.value;
   notice.textContent = '';
+  clearAchievement();
   showError('');
 });
 group.addEventListener('change', () => {
@@ -286,6 +373,8 @@ function setMode(page, mode) {
     recordMode = mode;
     byId('record-form').hidden = byId('notice').hidden = body;
     byId('body-form').hidden = !body;
+    byId('workout-plans').hidden = body;
+    clearAchievement();
     byId('record-title').textContent = (body ? editingBody : editing) ? 'Редактировать' : 'Запись';
     renderRecordInsights();
   } else {
@@ -306,6 +395,218 @@ for (const page of ['record', 'progress']) {
 }
 
 const newestFirst = (a, b) => b.date.localeCompare(a.date) || b.updatedAt - a.updatedAt;
+
+function planButton(text, action, className) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = className;
+  button.textContent = text;
+  button.addEventListener('click', action);
+  return button;
+}
+
+function workoutResults() {
+  return activeWorkout ? entries.filter(entry => entry.workoutId === activeWorkout.id) : [];
+}
+
+function renderActiveWorkout() {
+  const panel = byId('active-workout');
+  panel.hidden = !activeWorkout;
+  if (!activeWorkout) return;
+  const completed = new Set(workoutResults().map(entry => entry.exerciseId));
+  const done = activeWorkout.exerciseIds.filter(id => completed.has(id)).length;
+  byId('workout-name').textContent = activeWorkout.name;
+  byId('workout-count').textContent = done + ' / ' + activeWorkout.exerciseIds.length;
+  const progress = byId('workout-progress');
+  progress.value = done;
+  progress.max = activeWorkout.exerciseIds.length;
+  const list = byId('workout-list');
+  list.replaceChildren();
+  for (const [index, id] of activeWorkout.exerciseIds.entries()) {
+    const item = exerciseById.get(id);
+    const saved = completed.has(id);
+    const button = planButton('', () => selectWorkoutExercise(id), 'workout-item');
+    button.setAttribute('aria-label', exerciseName(item) + (saved ? ', записано' : ', открыть запись'));
+    button.setAttribute('aria-pressed', String(exercise.value === id));
+    const marker = document.createElement('span');
+    marker.className = 'workout-marker';
+    marker.textContent = saved ? '✓' : String(index + 1);
+    const label = document.createElement('span');
+    label.textContent = exerciseName(item);
+    button.dataset.done = String(saved);
+    button.append(marker, label);
+    list.append(button);
+  }
+  byId('next-exercise').hidden = done === activeWorkout.exerciseIds.length;
+  byId('next-exercise').textContent = completed.has(exercise.value) ? 'Следующее упражнение' : 'К первому незаписанному';
+  byId('finish-workout').textContent = done === activeWorkout.exerciseIds.length ? 'Тренировка завершена · закрыть' : 'Завершить тренировку';
+}
+
+function selectWorkoutExercise(id) {
+  const item = exerciseById.get(id);
+  const saved = workoutResults().filter(entry => entry.exerciseId === id).sort(newestFirst)[0];
+  notice.textContent = '';
+  group.value = item.groupId;
+  fillExercises(group, exercise, id);
+  useEntry(saved ?? null);
+  setMode('record', 'workout');
+  openPage('record');
+}
+
+function startWorkout(template) {
+  if (activeWorkout && !window.confirm('Начать новую тренировку? Записанные результаты текущей уже находятся в журнале.')) return;
+  const workout = {
+    id: newId(), templateId: template.id, name: template.name,
+    exerciseIds: [...template.exerciseIds], date: today()
+  };
+  if (!saveDiary({ activeWorkout: workout })) {
+    showError('Не удалось начать тренировку на устройстве.', byId('template-error'));
+    return;
+  }
+  templatesDialog.close();
+  byId('workout-details').open = true;
+  showError('', byId('workout-error'));
+  selectWorkoutExercise(workout.exerciseIds[0]);
+}
+
+byId('next-exercise').addEventListener('click', () => {
+  if (!activeWorkout) return;
+  const completed = new Set(workoutResults().map(entry => entry.exerciseId));
+  const next = activeWorkout.exerciseIds.find(id => !completed.has(id));
+  if (next) selectWorkoutExercise(next);
+});
+byId('finish-workout').addEventListener('click', () => {
+  if (!activeWorkout) return;
+  const complete = new Set(workoutResults().map(entry => entry.exerciseId));
+  if (activeWorkout.exerciseIds.some(id => !complete.has(id)) && !window.confirm('Завершить сейчас? В журнале сохранятся выполненные упражнения.')) return;
+  if (!saveDiary({ activeWorkout: null })) {
+    showError('Не удалось завершить тренировку.', byId('workout-error'));
+    return;
+  }
+  useEntry(null);
+  notice.textContent = 'Тренировка завершена.';
+});
+
+function renderTemplateLibrary() {
+  byId('templates-title').textContent = 'Шаблоны тренировок';
+  byId('templates-library').hidden = false;
+  byId('template-form').hidden = true;
+  byId('templates-empty').hidden = templates.length > 0;
+  showError('', byId('template-error'));
+  const list = byId('templates-list');
+  list.replaceChildren();
+  for (const template of templates) {
+    const card = document.createElement('article');
+    card.className = 'template-card';
+    const title = document.createElement('h3');
+    title.textContent = template.name;
+    const detail = document.createElement('p');
+    detail.textContent = template.exerciseIds.map(id => exerciseName(exerciseById.get(id))).join(' · ');
+    const actions = document.createElement('div');
+    actions.className = 'template-card-actions';
+    actions.append(
+      planButton('Начать', () => startWorkout(template), 'primary'),
+      planButton('Править', () => editTemplate(template), 'plan-finish'),
+      planButton('Удалить', () => {
+        if (!window.confirm('Удалить шаблон «' + template.name + '»?')) return;
+        if (!saveDiary({ templates: templates.filter(item => item.id !== template.id) })) {
+          showError('Не удалось удалить шаблон.', byId('template-error'));
+          return;
+        }
+        renderTemplateLibrary();
+      }, 'plan-finish')
+    );
+    card.append(title, detail, actions);
+    list.append(card);
+  }
+}
+
+function renderTemplateOrder() {
+  const list = byId('template-order');
+  list.replaceChildren();
+  for (const [index, id] of templateExerciseIds.entries()) {
+    const row = document.createElement('div');
+    row.className = 'template-order-row';
+    const label = document.createElement('span');
+    const name = exerciseName(exerciseById.get(id));
+    label.textContent = (index + 1) + '. ' + name;
+    row.append(label);
+    for (const [direction, symbol] of [[-1, '↑'], [1, '↓']]) {
+      const button = planButton(symbol, () => {
+        const destination = index + direction;
+        [templateExerciseIds[index], templateExerciseIds[destination]] = [templateExerciseIds[destination], templateExerciseIds[index]];
+        renderTemplateOrder();
+      }, 'picker-action');
+      button.disabled = index + direction < 0 || index + direction >= templateExerciseIds.length;
+      button.setAttribute('aria-label', name + (direction === -1 ? ' выше' : ' ниже'));
+      row.append(button);
+    }
+    list.append(row);
+  }
+}
+
+function editTemplate(template = null) {
+  templateEditing = template?.id ?? null;
+  templateExerciseIds = [...(template?.exerciseIds ?? [])];
+  byId('templates-title').textContent = template ? 'Изменить шаблон' : 'Новый шаблон';
+  byId('template-name').value = template?.name ?? '';
+  byId('templates-library').hidden = true;
+  byId('template-form').hidden = false;
+  showError('', byId('template-error'));
+  const choices = byId('template-choices');
+  choices.replaceChildren();
+  for (const item of groups) {
+    const items = [...exerciseById.values()].filter(exercise => exercise.groupId === item.id);
+    if (!items.length) continue;
+    const details = document.createElement('details');
+    details.className = 'template-group';
+    details.open = items.some(exercise => templateExerciseIds.includes(exercise.id));
+    const title = document.createElement('summary');
+    title.textContent = item.name;
+    details.append(title);
+    for (const exercise of items) {
+      const label = document.createElement('label');
+      label.className = 'check-row';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = templateExerciseIds.includes(exercise.id);
+      input.addEventListener('change', () => {
+        templateExerciseIds = templateExerciseIds.filter(id => id !== exercise.id);
+        if (input.checked) templateExerciseIds.push(exercise.id);
+        renderTemplateOrder();
+      });
+      const text = document.createElement('span');
+      text.textContent = exerciseName(exercise);
+      label.append(input, text);
+      details.append(label);
+    }
+    choices.append(details);
+  }
+  renderTemplateOrder();
+  byId('template-name').focus();
+}
+
+byId('open-templates').addEventListener('click', () => {
+  renderTemplateLibrary();
+  templatesDialog.showModal();
+});
+byId('close-templates').addEventListener('click', () => templatesDialog.close());
+byId('create-template').addEventListener('click', () => editTemplate());
+byId('cancel-template').addEventListener('click', renderTemplateLibrary);
+byId('template-form').addEventListener('submit', event => {
+  event.preventDefault();
+  const name = byId('template-name').value.trim();
+  if (!validName(name) || !templateExerciseIds.length) {
+    showError(!validName(name) ? 'Дай тренировке название.' : 'Выбери хотя бы одно упражнение.', byId('template-error'));
+    return;
+  }
+  const template = { id: templateEditing ?? newId(), name, exerciseIds: [...templateExerciseIds], updatedAt: Date.now() };
+  if (!saveDiary({ templates: [...templates.filter(item => item.id !== template.id), template] })) {
+    showError('Не удалось сохранить шаблон.', byId('template-error'));
+    return;
+  }
+  renderTemplateLibrary();
+});
 
 function fillBody(entry = null) {
   editingBody = entry?.id ?? null;
@@ -429,6 +730,7 @@ byId('catalog-form').addEventListener('submit', event => {
     byId('name-row').hidden = exerciseById.get(exercise.value)?.name !== null;
     nameField.required = !byId('name-row').hidden;
     renderRecordInsights();
+    renderActiveWorkout();
   }
   notice.textContent = adding ? 'Добавлено · ' + name : 'Новое название · ' + name;
   catalogDialog.close();
@@ -652,6 +954,7 @@ function renderProgress() {
     (item ? 'График появится после первой записи.' : 'В этой группе пока нет упражнений.') +
     (initialDescription ? ' Стартовые показатели · ' + initialDescription : '');
   byId('progress-summary').hidden = !chartPoints.length;
+  renderPersonalRecords(chartPoints.at(-1)?.entry);
   if (!chartPoints.length) return;
   byId('chart-caption').textContent = body ? 'Вес тела' : metric === 'weight' ? 'Вес по датам' : 'Повторения по датам';
   const change = byId('chart-change');
@@ -672,6 +975,7 @@ function renderSelectedPoint() {
   if (!point) return;
   byId('chart-metric').textContent = formatter.format(point.value) + ' ' + chartUnit;
   byId('chart-details').textContent = dateFormatter.format(new Date(point.entry.date + 'T12:00:00')) + ' · ' + description(point.entry);
+  renderPersonalRecords(point.entry);
   drawChart();
 }
 
@@ -741,7 +1045,11 @@ window.addEventListener('storage', event => {
   if (![storageKey, legacyEntriesKey, legacyStarterKey, null].includes(event.key)) return;
   restoreDiary();
   fillSelectors();
-  if (activePage === 'record') renderRecordInsights();
+  clearAchievement();
+  if (activePage === 'record') {
+    renderRecordInsights();
+    renderActiveWorkout();
+  }
   if (activePage === 'journal') renderJournal();
   if (activePage === 'progress') renderProgress();
 });
@@ -783,13 +1091,14 @@ function parseStarter(value, exerciseLookup) {
 }
 
 function parseBackupEntry(value, exerciseLookup) {
-  const { id, exerciseId, name, date, weight, sets, reps, updatedAt } = value ?? {};
+  const { id, exerciseId, name, date, weight, sets, reps, updatedAt, workoutId } = value ?? {};
   const item = exerciseLookup.get(exerciseId);
   if (!validId(id) || !item || !validName(name) || !validDate(date) ||
       !optionalWeight(weight) || (weight === null && !item.bodyweight) ||
-      !positiveInteger(sets, 999) || !positiveInteger(reps, 9999) || !positiveInteger(updatedAt, Number.MAX_SAFE_INTEGER))
+      !positiveInteger(sets, 999) || !positiveInteger(reps, 9999) || !positiveInteger(updatedAt, Number.MAX_SAFE_INTEGER) ||
+      (workoutId !== undefined && !validId(workoutId)))
     throw new Error('Invalid entry');
-  return { id, exerciseId, name, date, weight, sets, reps, updatedAt };
+  return { id, exerciseId, name, date, weight, sets, reps, updatedAt, ...(workoutId ? { workoutId } : {}) };
 }
 
 function parseWeighIn(value) {
@@ -797,6 +1106,19 @@ function parseWeighIn(value) {
   if (!validId(id) || !validDate(date) || !optionalWeight(weight) || !(weight > 0) ||
       !positiveInteger(updatedAt, Number.MAX_SAFE_INTEGER)) throw new Error('Invalid weigh-in');
   return { id, date, weight, updatedAt };
+}
+
+function parsePlan(value, lookup, active = false) {
+  const { id, name, exerciseIds, updatedAt, templateId, date } = value ?? {};
+  if (!validId(id) || !validName(name) || !Array.isArray(exerciseIds) || !exerciseIds.length ||
+      exerciseIds.length > 1000 || exerciseIds.some(id => !lookup.has(id)) || new Set(exerciseIds).size !== exerciseIds.length)
+    throw new Error('Invalid workout plan');
+  if (active) {
+    if (!validId(templateId) || !validDate(date)) throw new Error('Invalid workout');
+    return { id, name, exerciseIds: [...exerciseIds], templateId, date };
+  }
+  if (!positiveInteger(updatedAt, Number.MAX_SAFE_INTEGER)) throw new Error('Invalid template');
+  return { id, name, exerciseIds: [...exerciseIds], updatedAt };
 }
 
 function parseBackup(data) {
@@ -809,7 +1131,9 @@ function parseBackup(data) {
     catalog: importedCatalog,
     entries: data.entries.map(value => parseBackupEntry(value, lookup)),
     weighIns: current ? data.weighIns.map(parseWeighIn) : [],
-    starterValues: data.starterValues.map(value => parseStarter(value, lookup))
+    starterValues: data.starterValues.map(value => parseStarter(value, lookup)),
+    templates: current ? (data.templates ?? []).map(value => parsePlan(value, lookup)) : [],
+    activeWorkout: current && data.activeWorkout ? parsePlan(data.activeWorkout, lookup, true) : null
   };
 }
 
@@ -826,7 +1150,7 @@ const importFile = byId('import-file');
 byId('export').addEventListener('click', () => {
   const values = baseExercises.map(item => starterFor(item)).map(({ id, name, weight, sets, reps, singleSetReps }) =>
     ({ id, name, weight, sets, reps, ...(singleSetReps ? { singleSetReps } : {}) }));
-  const file = new Blob([JSON.stringify({ version: 2, catalog, starterValues: values, entries, weighIns }, null, 2)], { type: 'application/json' });
+  const file = new Blob([JSON.stringify({ version: 2, catalog, starterValues: values, entries, weighIns, templates, activeWorkout }, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(file);
   const link = document.createElement('a');
   link.href = url;
@@ -835,7 +1159,7 @@ byId('export').addEventListener('click', () => {
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  backupMessage.textContent = 'В файл вошли упражнения, тренировки и взвешивания.';
+  backupMessage.textContent = 'В файл вошли упражнения, шаблоны, тренировки и взвешивания.';
 });
 byId('import').addEventListener('click', () => importFile.click());
 importFile.addEventListener('change', async () => {
@@ -861,7 +1185,9 @@ importFile.addEventListener('change', async () => {
     },
     entries: mergeById(entries, imported.entries, true),
     weighIns: mergeById(weighIns, imported.weighIns, true),
-    starterValues: mergeById([...starterValues.values()], imported.starterValues)
+    starterValues: mergeById([...starterValues.values()], imported.starterValues),
+    templates: mergeById(templates, imported.templates, true),
+    activeWorkout: activeWorkout ?? imported.activeWorkout
   };
   if (!saveDiary(merged)) {
     backupMessage.textContent = 'Не удалось сохранить данные на устройстве.';
@@ -870,6 +1196,7 @@ importFile.addEventListener('change', async () => {
   fillSelectors();
   if (!editing) fillForm();
   if (!editingBody) fillBody();
+  renderActiveWorkout();
   renderJournal();
   backupMessage.textContent = 'Данные загружены.';
 });
@@ -878,6 +1205,11 @@ restoreDiary();
 fillSelectors();
 useEntry(null);
 fillBody();
+if (activeWorkout) {
+  const completed = new Set(workoutResults().map(entry => entry.exerciseId));
+  const next = activeWorkout.exerciseIds.find(id => !completed.has(id)) ?? activeWorkout.exerciseIds[0];
+  selectWorkoutExercise(next);
+}
 if (!storageReady) showError('Не удалось прочитать журнал на этом устройстве.');
 
 if ('serviceWorker' in navigator) {

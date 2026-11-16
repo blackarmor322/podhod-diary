@@ -9,8 +9,8 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./style.css?v=2766bc31ce0e59b2">
-  <script type="module" src="./app.js?v=2766bc31ce0e59b2"></script>
+  <link rel="stylesheet" href="./style.css?v=609d77ffe9ab44e7">
+  <script type="module" src="./app.js?v=609d77ffe9ab44e7"></script>
   <title>Подход — дневник тренировок</title>
 </head>
 <body>
@@ -25,6 +25,17 @@
         <div class="segments" id="record-mode" role="group" aria-label="Что записать">
           <button type="button" data-mode="workout" aria-pressed="true">Тренировка</button>
           <button type="button" data-mode="body" aria-pressed="false">Вес тела</button>
+        </div>
+        <div id="workout-plans">
+          <button id="open-templates" class="template-launch" type="button"><span>Шаблоны тренировок</span><span aria-hidden="true">↗</span></button>
+          <section id="active-workout" class="workout-plan" aria-labelledby="workout-name" hidden>
+            <div class="plan-heading"><h2 id="workout-name"></h2><span id="workout-count"></span></div>
+            <progress id="workout-progress" aria-label="Выполнение тренировки"></progress>
+            <details id="workout-details"><summary>Упражнения</summary><div id="workout-list"></div></details>
+            <button id="next-exercise" class="plan-next" type="button">Следующее упражнение</button>
+            <button id="finish-workout" class="plan-finish" type="button">Завершить тренировку</button>
+            <p id="workout-error" class="error" role="alert" hidden></p>
+          </section>
         </div>
         <form id="record-form" novalidate>
           <div class="surface exercise-card workout-picker">
@@ -45,6 +56,10 @@
           <div class="save-dock"><button id="save" class="primary" type="submit" disabled>Записать</button></div>
         </form>
         <p id="notice" class="notice" role="status"></p>
+        <div id="record-achievement" class="achievement" role="status" hidden>
+          <strong>Личный рекорд</strong>
+          <p id="achievement-description"></p>
+        </div>
         <form id="body-form" novalidate hidden>
           <div class="surface body-card">
             <label class="body-number"><span>Текущий вес, кг</span><input id="body-weight" inputmode="decimal" autocomplete="off" maxlength="8" placeholder="—" required></label>
@@ -94,6 +109,10 @@
           <p id="chart-details" class="chart-details"></p>
         </div>
         <p id="progress-empty" class="empty"></p>
+        <section id="personal-records" class="record-section" aria-labelledby="records-title" hidden>
+          <h2 id="records-title">Личные рекорды</h2>
+          <div id="records-list" class="records-grid"></div>
+        </section>
       </section>
 
       <section id="journal-page" aria-labelledby="journal-title" hidden>
@@ -133,6 +152,23 @@
         <button class="primary" type="submit">Сохранить</button>
       </div>
     </form>
+  </dialog>
+  <dialog id="templates-dialog" aria-labelledby="templates-title">
+    <div class="dialog-header"><h2 id="templates-title">Шаблоны тренировок</h2><button id="close-templates" class="picker-action" type="button" aria-label="Закрыть">×</button></div>
+    <div id="templates-library">
+      <p id="templates-empty" class="template-hint">Собери упражнения в своём порядке и открывай этот список в зале.</p>
+      <div id="templates-list"></div>
+      <button id="create-template" class="primary" type="button">Создать шаблон</button>
+    </div>
+    <form id="template-form" novalidate hidden>
+      <label for="template-name" class="dialog-label">Название тренировки</label>
+      <input id="template-name" class="dialog-input" placeholder="Например, грудь + трицепс" maxlength="70" autocomplete="off">
+      <div id="template-order" class="template-order"></div>
+      <p class="template-hint">Выбирай упражнения в порядке выполнения.</p>
+      <div id="template-choices"></div>
+      <div class="template-editor-actions"><button id="cancel-template" class="secondary" type="button">Назад</button><button class="primary" type="submit">Сохранить</button></div>
+    </form>
+    <p id="template-error" class="error" role="alert" hidden></p>
   </dialog>
 </body>
 </html>
