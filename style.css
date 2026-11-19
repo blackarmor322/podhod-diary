@@ -17,7 +17,7 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; background: var(--background); }
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button, select { cursor: pointer; }
 button { touch-action: manipulation; }
 a { color: var(--accent); }
@@ -67,6 +67,11 @@ h1 { margin: 0 0 17px; font-size: clamp(42px, 11vw, 59px); font-weight: 850; lin
 .segments button[aria-pressed="true"] { background: #343b36; color: #f3f5eb; }
 .surface { border: 1px solid var(--border); background: var(--surface); border-radius: 18px; }
 .exercise-card { overflow: hidden; }
+.exercise-note { display: grid; gap: 3px; width: 100%; min-height: 44px; padding: 9px 15px 11px; border: 0; border-top: 1px solid var(--border); background: #252d25; color: var(--text); text-align: start; }
+.exercise-note > :first-child { color: var(--accent); font-size: 12px; font-weight: 650; }
+#exercise-note-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.4; }
+#note-input { resize: vertical; line-height: 1.45; }
+#note-error { margin: 0 0 10px; }
 .workout-picker { background: #20252a; }
 .picker-row { display: grid; grid-template-columns: minmax(0, 1fr) 48px; align-items: center; }
 .picker-row + .picker-row, .picker-row + .row { border-top: 1px solid var(--border); }

@@ -32,10 +32,12 @@ const bodyWeight = byId('body-weight');
 const saveBody = byId('save-body');
 const catalogDialog = byId('catalog-dialog');
 const catalogName = byId('catalog-name');
+const noteInput = byId('note-input');
 const newId = () => globalThis.crypto.randomUUID?.() ?? 'entry-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 let entries = [];
 let weighIns = [];
 let visits = [];
+let exerciseNotes = [];
 let lastStoredDiary = null;
 let starterValues = new Map();
 let catalog = { groups: [], exercises: [] };
@@ -50,6 +52,7 @@ let progressMode = 'workout';
 let catalogTarget = null;
 let catalogAction = null;
 let catalogTrigger = null;
+let noteExerciseId = null;
 let chartPoints = [];
 let pointPositions = [];
 let chartUnit = 'кг';
@@ -70,7 +73,7 @@ function catalogLists(value) {
 }
 
 function applyState(value) {
-  ({ entries, weighIns, visits, catalog, templates, activeWorkout } = value);
+  ({ entries, weighIns, visits, exerciseNotes, catalog, templates, activeWorkout } = value);
   starterValues = new Map(value.starterValues.map(item => [item.id, item]));
   ({ groups, exerciseById } = catalogLists(catalog));
 }
@@ -102,7 +105,7 @@ function restoreDiary() {
 function saveDiary(changes) {
   if (!storageReady) return false;
   try {
-    let current = { entries, weighIns, visits, catalog, templates, activeWorkout, starterValues: [...starterValues.values()] };
+    let current = { entries, weighIns, visits, exerciseNotes, catalog, templates, activeWorkout, starterValues: [...starterValues.values()] };
     const stored = localStorage.getItem(storageKey);
     if (stored !== lastStoredDiary) {
       if (stored === null) return false;
@@ -310,6 +313,16 @@ function exerciseName(item) {
   return item.name ?? recentRecord(item.id)?.name ?? starterFor(item).name ?? 'Без названия';
 }
 
+function noteFor(id) {
+  return exerciseNotes.find(note => note.id === id)?.text ?? '';
+}
+
+function renderExerciseNote() {
+  const text = noteFor(exercise.value);
+  byId('exercise-note-text').textContent = text;
+  byId('exercise-note').hidden = !text;
+}
+
 function replaceOptions(select, choices, preferred) {
   select.replaceChildren(...choices.map(([value, label]) => new Option(label, value)));
   if (choices.some(([value]) => value === preferred)) select.value = preferred;
@@ -321,6 +334,7 @@ function fillSelectors(recordGroup = group.value, recordExercise = exercise.valu
   replaceOptions(progressGroup, options, progressGroup.value);
   fillExercises(group, exercise, recordExercise);
   fillExercises(progressGroup, progressExercise, progressExercise.value);
+  renderExerciseNote();
 }
 
 function fillExercises(groupSelect, exerciseSelect, preferred) {
@@ -331,6 +345,7 @@ function fillExercises(groupSelect, exerciseSelect, preferred) {
 
 function fillForm(preferredEntry) {
   clearAchievement();
+  renderExerciseNote();
   const item = exerciseById.get(exercise.value);
   renderRecordInsights(item);
   byId('empty-group-add').hidden = !!item;
@@ -759,12 +774,16 @@ byId('cancel-body-edit').addEventListener('click', () => {
 function openCatalog(type, trigger, action = null) {
   catalogTarget = type;
   catalogTrigger = trigger;
+  catalogAction = null;
   byId('catalog-title').textContent = type === 'group' ? 'Группы мышц' : 'Упражнения';
   byId('catalog-add').textContent = type === 'group' ? 'Добавить группу' : 'Добавить упражнение';
   byId('catalog-rename').textContent = type === 'group' ? 'Переименовать группу' : 'Переименовать упражнение';
   byId('catalog-rename').disabled = type === 'exercise' && !exercise.value;
+  byId('catalog-note').hidden = type !== 'exercise' || !exercise.value;
+  byId('catalog-note').textContent = noteFor(exercise.value) ? 'Изменить заметку' : 'Добавить заметку';
   byId('catalog-actions').hidden = false;
   byId('catalog-fields').hidden = true;
+  byId('note-fields').hidden = true;
   catalogDialog.showModal();
   if (action) setCatalogAction(action);
 }
@@ -774,6 +793,15 @@ function setCatalogAction(action) {
   const selected = catalogTarget === 'group' ? groups.find(item => item.id === group.value) : exerciseById.get(exercise.value);
   byId('catalog-title').textContent = byId('catalog-' + action).textContent;
   byId('catalog-actions').hidden = true;
+  if (action === 'note') {
+    noteExerciseId = selected.id;
+    byId('note-label').textContent = exerciseName(selected);
+    noteInput.defaultValue = noteInput.value = noteFor(noteExerciseId);
+    byId('note-fields').hidden = false;
+    showError('', byId('note-error'));
+    noteInput.focus();
+    return;
+  }
   byId('catalog-fields').hidden = false;
   byId('bodyweight-option').hidden = catalogTarget !== 'exercise' || action !== 'add';
   byId('bodyweight-exercise').checked = false;
@@ -790,14 +818,44 @@ for (const type of ['group', 'exercise']) {
 byId('empty-group-add').addEventListener('click', event => openCatalog('exercise', event.currentTarget, 'add'));
 byId('catalog-add').addEventListener('click', () => setCatalogAction('add'));
 byId('catalog-rename').addEventListener('click', () => setCatalogAction('rename'));
+byId('catalog-note').addEventListener('click', () => setCatalogAction('note'));
+byId('exercise-note').addEventListener('click', event => openCatalog('exercise', event.currentTarget, 'note'));
 byId('close-catalog').addEventListener('click', () => catalogDialog.close());
 catalogDialog.addEventListener('close', () => {
+  noteExerciseId = null;
   if (catalogTrigger?.hidden) byId('manage-exercise').focus();
   else catalogTrigger?.focus();
 });
 
+function saveExerciseNote() {
+  const text = noteInput.value.trim();
+  if (text.length > 500) {
+    showError('Сократи заметку до 500 символов.', byId('note-error'));
+    return;
+  }
+  if (text !== noteInput.defaultValue) {
+    const id = noteExerciseId;
+    const saved = saveDiary(current => {
+      const previous = current.exerciseNotes.find(note => note.id === id);
+      const updatedAt = Math.min(Number.MAX_SAFE_INTEGER, Math.max(Date.now(), (previous?.updatedAt ?? 0) + 1));
+      const note = { id, text, updatedAt };
+      return { exerciseNotes: current.exerciseNotes.filter(item => item.id !== id).concat(note) };
+    });
+    if (!saved) {
+      showError('Не удалось сохранить заметку. Попробуй ещё раз.', byId('note-error'));
+      return;
+    }
+  }
+  renderExerciseNote();
+  catalogDialog.close();
+}
+
 byId('catalog-form').addEventListener('submit', event => {
   event.preventDefault();
+  if (catalogAction === 'note' && noteExerciseId) {
+    saveExerciseNote();
+    return;
+  }
   if (byId('catalog-fields').hidden) return;
   const name = catalogName.value.trim();
   const error = byId('catalog-error');
@@ -1231,9 +1289,16 @@ function parseBackup(data) {
   const { exerciseById: lookup } = catalogLists(importedCatalog);
   const visitDays = current && data.visits !== undefined ? data.visits : [];
   if (!Array.isArray(visitDays) || !visitDays.every(validDate)) throw new Error('Invalid visit dates');
+  const notes = current ? data.exerciseNotes ?? [] : [];
+  if (!Array.isArray(notes)) throw new Error('Invalid exercise notes');
   return {
     catalog: importedCatalog,
     visits: [...new Set(visitDays)],
+    exerciseNotes: mergeById([], notes.map(({ id, text, updatedAt }) => {
+      if (!lookup.has(id) || typeof text !== 'string' || text.length > 500 || !positiveInteger(updatedAt, Number.MAX_SAFE_INTEGER))
+        throw new Error('Invalid exercise note');
+      return { id, text: text.trim(), updatedAt };
+    }), true),
     entries: data.entries.map(value => parseBackupEntry(value, lookup)),
     weighIns: current ? data.weighIns.map(parseWeighIn) : [],
     starterValues: data.starterValues.map(value => parseStarter(value, lookup)),
@@ -1255,7 +1320,7 @@ const importFile = byId('import-file');
 byId('export').addEventListener('click', () => {
   const values = baseExercises.map(item => starterFor(item)).map(({ id, name, weight, sets, reps, singleSetReps }) =>
     ({ id, name, weight, sets, reps, ...(singleSetReps ? { singleSetReps } : {}) }));
-  const file = new Blob([JSON.stringify({ version: 2, catalog, starterValues: values, entries, weighIns, visits, templates, activeWorkout }, null, 2)], { type: 'application/json' });
+  const file = new Blob([JSON.stringify({ version: 2, catalog, starterValues: values, entries, weighIns, visits, exerciseNotes, templates, activeWorkout }, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(file);
   const link = document.createElement('a');
   link.href = url;
@@ -1264,7 +1329,7 @@ byId('export').addEventListener('click', () => {
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  backupMessage.textContent = 'В файл вошли упражнения, шаблоны, тренировки, взвешивания и посещения зала.';
+  backupMessage.textContent = 'В файл вошли упражнения с заметками, шаблоны, тренировки, взвешивания и посещения зала.';
 });
 byId('import').addEventListener('click', () => importFile.click());
 importFile.addEventListener('change', async () => {
@@ -1283,18 +1348,20 @@ importFile.addEventListener('change', async () => {
     backupMessage.textContent = 'Выбери файл данных, созданный в «Подходе».';
     return;
   }
-  const merged = {
+  const saved = saveDiary(current => ({
     catalog: {
-      groups: mergeById(imported.catalog.groups, catalog.groups),
-      exercises: mergeById(imported.catalog.exercises, catalog.exercises)
+      groups: mergeById(imported.catalog.groups, current.catalog.groups),
+      exercises: mergeById(imported.catalog.exercises, current.catalog.exercises)
     },
-    entries: mergeById(entries, imported.entries, true),
-    weighIns: mergeById(weighIns, imported.weighIns, true),
-    starterValues: mergeById([...starterValues.values()], imported.starterValues),
-    templates: mergeById(templates, imported.templates, true),
-    activeWorkout: activeWorkout ?? imported.activeWorkout
-  };
-  if (!saveDiary(current => ({ ...merged, visits: [...new Set([...current.visits, ...imported.visits])] }))) {
+    entries: mergeById(current.entries, imported.entries, true),
+    weighIns: mergeById(current.weighIns, imported.weighIns, true),
+    starterValues: mergeById(current.starterValues, imported.starterValues),
+    templates: mergeById(current.templates, imported.templates, true),
+    activeWorkout: current.activeWorkout ?? imported.activeWorkout,
+    visits: [...new Set([...current.visits, ...imported.visits])],
+    exerciseNotes: mergeById(current.exerciseNotes, imported.exerciseNotes, true)
+  }));
+  if (!saved) {
     backupMessage.textContent = 'Не удалось сохранить данные на устройстве.';
     return;
   }

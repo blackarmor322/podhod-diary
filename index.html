@@ -9,8 +9,8 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./style.css?v=1d689278faacd37f">
-  <script type="module" src="./app.js?v=1d689278faacd37f"></script>
+  <link rel="stylesheet" href="./style.css?v=bb1ada092073690c">
+  <script type="module" src="./app.js?v=bb1ada092073690c"></script>
   <title>Подход — дневник тренировок</title>
 </head>
 <body>
@@ -52,6 +52,9 @@
             <div class="picker-row"><label class="row"><span>Группа</span><select id="group" required aria-label="Группа мышц"></select></label><button type="button" class="picker-action" id="manage-group" aria-label="Управление группами">•••</button></div>
             <div class="picker-row exercise-choice"><label class="row"><span>Упражнение</span><select id="exercise" required aria-label="Упражнение"></select></label><button type="button" class="picker-action" id="manage-exercise" aria-label="Управление упражнениями">•••</button></div>
             <label id="name-row" class="row" hidden><span>Название</span><input id="exercise-name" maxlength="70" placeholder="Введи название" autocomplete="off"></label>
+            <button type="button" id="exercise-note" class="exercise-note" aria-haspopup="dialog" hidden>
+              <span>Заметка</span><span id="exercise-note-text"></span>
+            </button>
           </div>
           <button type="button" id="empty-group-add" class="secondary" hidden>Добавить упражнение</button>
           <p id="reference" class="reference" hidden></p>
@@ -159,6 +162,7 @@
       <div id="catalog-actions" class="catalog-actions">
         <button id="catalog-add" class="primary" type="button">Добавить</button>
         <button id="catalog-rename" class="secondary" type="button">Переименовать</button>
+        <button id="catalog-note" class="secondary" type="button" hidden>Добавить заметку</button>
       </div>
       <div id="catalog-fields" hidden>
         <label class="dialog-label" for="catalog-name">Название</label>
@@ -166,6 +170,12 @@
         <label id="bodyweight-option" class="check-row" hidden><input id="bodyweight-exercise" type="checkbox">Упражнение с весом тела</label>
         <p id="catalog-error" class="error" role="alert" hidden></p>
         <button class="primary" type="submit">Сохранить</button>
+      </div>
+      <div id="note-fields" hidden>
+        <label id="note-label" class="dialog-label" for="note-input"></label>
+        <textarea id="note-input" class="dialog-input" rows="3" maxlength="500" placeholder="Например, сиденье на 4, узкая рукоять"></textarea>
+        <p id="note-error" class="error" role="alert" hidden></p>
+        <button class="primary" type="submit">Сохранить заметку</button>
       </div>
     </form>
   </dialog>
