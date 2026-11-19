@@ -26,6 +26,7 @@ const pointSelect = byId('chart-point');
 const formatter = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 });
 const dateFormatter = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' });
 const shortDate = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' });
+const visitDateFormatter = new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
 const bodyDate = byId('body-date');
 const bodyWeight = byId('body-weight');
 const saveBody = byId('save-body');
@@ -34,6 +35,8 @@ const catalogName = byId('catalog-name');
 const newId = () => globalThis.crypto.randomUUID?.() ?? 'entry-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 let entries = [];
 let weighIns = [];
+let visits = [];
+let lastStoredDiary = null;
 let starterValues = new Map();
 let catalog = { groups: [], exercises: [] };
 let groups = [];
@@ -67,7 +70,7 @@ function catalogLists(value) {
 }
 
 function applyState(value) {
-  ({ entries, weighIns, catalog, templates, activeWorkout } = value);
+  ({ entries, weighIns, visits, catalog, templates, activeWorkout } = value);
   starterValues = new Map(value.starterValues.map(item => [item.id, item]));
   ({ groups, exerciseById } = catalogLists(catalog));
 }
@@ -87,6 +90,7 @@ function restoreDiary() {
       catch { oldStarters = []; }
       applyState(parseBackup({ version: 1, entries: oldEntries, starterValues: oldStarters }));
     }
+    lastStoredDiary = saved;
     storageReady = true;
   } catch {
     storageReady = false;
@@ -97,21 +101,116 @@ function restoreDiary() {
 
 function saveDiary(changes) {
   if (!storageReady) return false;
-  const value = { version: 2, entries, weighIns, catalog, templates, activeWorkout, starterValues: [...starterValues.values()], ...changes };
-  try { localStorage.setItem(storageKey, JSON.stringify(value)); }
-  catch { return false; }
-  applyState(value);
-  return true;
+  try {
+    let current = { entries, weighIns, visits, catalog, templates, activeWorkout, starterValues: [...starterValues.values()] };
+    const stored = localStorage.getItem(storageKey);
+    if (stored !== lastStoredDiary) {
+      if (stored === null) return false;
+      current = parseBackup(JSON.parse(stored));
+    }
+    const updates = typeof changes === 'function' ? changes(current) : changes;
+    const value = { version: 2, ...current, ...updates };
+    const encoded = JSON.stringify(value);
+    localStorage.setItem(storageKey, encoded);
+    lastStoredDiary = encoded;
+    applyState(value);
+    return true;
+  } catch { return false; }
 }
 
 function persistEntries(nextEntries) {
   return saveDiary({ entries: nextEntries });
 }
 
-function today() {
-  const now = new Date();
+function localDay(now) {
   const pad = number => String(number).padStart(2, '0');
   return now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+}
+
+function today() {
+  return localDay(new Date());
+}
+
+function weekStart(day) {
+  const monday = new Date(day + 'T12:00:00');
+  monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7);
+  return localDay(monday);
+}
+
+function visitCountLabel(count) {
+  return count + ' ' + (count === 1 ? 'посещение' : count >= 2 && count <= 4 ? 'посещения' : 'посещений');
+}
+
+function renderVisitBar() {
+  const day = today();
+  const monday = weekStart(day);
+  const count = visits.filter(visit => visit >= monday && visit <= day).length;
+  const label = visitCountLabel(count);
+  byId('visit-count').textContent = label;
+  byId('visit-history-link').setAttribute('aria-label', 'На этой неделе ' + label + '. Открыть историю посещений');
+  const checked = visits.includes(day);
+  const button = byId('check-in');
+  button.textContent = checked ? 'Сегодня отмечено ✓' : 'Я в зале';
+  button.disabled = !storageReady || checked;
+  button.dataset.checked = String(checked);
+}
+
+byId('check-in').addEventListener('click', () => {
+  const day = today();
+  const saved = saveDiary(current => ({ visits: [...new Set([...current.visits, day])] }));
+  showError(saved ? '' : 'Не удалось сохранить посещение. Попробуй ещё раз.', byId('visit-error'));
+  renderVisitBar();
+});
+
+byId('visit-history-link').addEventListener('click', () => {
+  openPage('journal');
+  byId('visit-history').open = true;
+  byId('visit-history-title').focus();
+});
+
+function renderVisitHistory() {
+  const groups = new Map();
+  for (const day of [...visits].sort().reverse()) {
+    const monday = weekStart(day);
+    if (!groups.has(monday)) groups.set(monday, []);
+    groups.get(monday).push(day);
+  }
+  const list = byId('visit-weeks');
+  list.replaceChildren();
+  byId('visits-empty').hidden = visits.length > 0;
+  for (const [monday, days] of groups) {
+    const sunday = new Date(monday + 'T12:00:00');
+    sunday.setDate(sunday.getDate() + 6);
+    const section = document.createElement('section');
+    const heading = document.createElement('h3');
+    const total = document.createElement('span');
+    total.textContent = visitCountLabel(days.length);
+    heading.append(shortDate.format(new Date(monday + 'T12:00:00')) + ' — ' + dateFormatter.format(sunday), total);
+    section.append(heading);
+    for (const day of days) {
+      const row = document.createElement('div');
+      row.className = 'visit-day';
+      const time = document.createElement('time');
+      time.dateTime = day;
+      time.textContent = visitDateFormatter.format(new Date(day + 'T12:00:00'));
+      const undo = document.createElement('button');
+      undo.type = 'button';
+      undo.textContent = 'Убрать';
+      undo.setAttribute('aria-label', 'Убрать посещение за ' + time.textContent);
+      undo.addEventListener('click', () => {
+        if (!window.confirm('Убрать посещение за ' + time.textContent + '?')) return;
+        const saved = saveDiary(current => ({ visits: current.visits.filter(visit => visit !== day) }));
+        showError(saved ? '' : 'Не удалось убрать посещение.', byId('visit-history-error'));
+        if (saved) {
+          renderVisitBar();
+          renderJournal();
+        }
+      });
+      row.append(time, undo);
+      section.append(row);
+    }
+    list.append(section);
+  }
 }
 
 function showError(message, element = formError) {
@@ -293,6 +392,7 @@ function openPage(page) {
   if (page === 'progress') renderProgress();
   if (page === 'journal') renderJournal();
   if (page === 'record') {
+    renderVisitBar();
     renderRecordInsights();
     renderActiveWorkout();
   }
@@ -737,9 +837,10 @@ byId('catalog-form').addEventListener('submit', event => {
 });
 
 function renderJournal() {
+  renderVisitHistory();
   const list = byId('journal-list');
   list.replaceChildren();
-  byId('journal-empty').hidden = entries.length + weighIns.length > 0;
+  byId('journal-empty').hidden = entries.length + weighIns.length + visits.length > 0;
   const days = new Map();
   const sorted = [...entries, ...weighIns].sort(newestFirst);
   for (const entry of sorted) {
@@ -1044,6 +1145,7 @@ window.addEventListener('resize', () => {
 window.addEventListener('storage', event => {
   if (![storageKey, legacyEntriesKey, legacyStarterKey, null].includes(event.key)) return;
   restoreDiary();
+  renderVisitBar();
   fillSelectors();
   clearAchievement();
   if (activePage === 'record') {
@@ -1127,8 +1229,11 @@ function parseBackup(data) {
   const current = data.version === 2;
   const importedCatalog = current ? parseCatalog(data.catalog) : { groups: [], exercises: [] };
   const { exerciseById: lookup } = catalogLists(importedCatalog);
+  const visitDays = current && data.visits !== undefined ? data.visits : [];
+  if (!Array.isArray(visitDays) || !visitDays.every(validDate)) throw new Error('Invalid visit dates');
   return {
     catalog: importedCatalog,
+    visits: [...new Set(visitDays)],
     entries: data.entries.map(value => parseBackupEntry(value, lookup)),
     weighIns: current ? data.weighIns.map(parseWeighIn) : [],
     starterValues: data.starterValues.map(value => parseStarter(value, lookup)),
@@ -1150,7 +1255,7 @@ const importFile = byId('import-file');
 byId('export').addEventListener('click', () => {
   const values = baseExercises.map(item => starterFor(item)).map(({ id, name, weight, sets, reps, singleSetReps }) =>
     ({ id, name, weight, sets, reps, ...(singleSetReps ? { singleSetReps } : {}) }));
-  const file = new Blob([JSON.stringify({ version: 2, catalog, starterValues: values, entries, weighIns, templates, activeWorkout }, null, 2)], { type: 'application/json' });
+  const file = new Blob([JSON.stringify({ version: 2, catalog, starterValues: values, entries, weighIns, visits, templates, activeWorkout }, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(file);
   const link = document.createElement('a');
   link.href = url;
@@ -1159,7 +1264,7 @@ byId('export').addEventListener('click', () => {
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  backupMessage.textContent = 'В файл вошли упражнения, шаблоны, тренировки и взвешивания.';
+  backupMessage.textContent = 'В файл вошли упражнения, шаблоны, тренировки, взвешивания и посещения зала.';
 });
 byId('import').addEventListener('click', () => importFile.click());
 importFile.addEventListener('change', async () => {
@@ -1189,7 +1294,7 @@ importFile.addEventListener('change', async () => {
     templates: mergeById(templates, imported.templates, true),
     activeWorkout: activeWorkout ?? imported.activeWorkout
   };
-  if (!saveDiary(merged)) {
+  if (!saveDiary(current => ({ ...merged, visits: [...new Set([...current.visits, ...imported.visits])] }))) {
     backupMessage.textContent = 'Не удалось сохранить данные на устройстве.';
     return;
   }
@@ -1197,11 +1302,23 @@ importFile.addEventListener('change', async () => {
   if (!editing) fillForm();
   if (!editingBody) fillBody();
   renderActiveWorkout();
+  renderVisitBar();
   renderJournal();
   backupMessage.textContent = 'Данные загружены.';
 });
 
 restoreDiary();
+let visitRefreshTimer;
+function refreshVisitDay() {
+  renderVisitBar();
+  window.clearTimeout(visitRefreshTimer);
+  const midnight = new Date();
+  midnight.setHours(24, 0, 0, 0);
+  visitRefreshTimer = window.setTimeout(refreshVisitDay, Math.max(1, midnight.getTime() - Date.now()));
+}
+window.addEventListener('pageshow', refreshVisitDay);
+window.addEventListener('focus', refreshVisitDay);
+refreshVisitDay();
 fillSelectors();
 useEntry(null);
 fillBody();

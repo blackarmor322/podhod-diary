@@ -9,8 +9,8 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./style.css?v=02feaf63eda50a04">
-  <script type="module" src="./app.js?v=02feaf63eda50a04"></script>
+  <link rel="stylesheet" href="./style.css?v=1d689278faacd37f">
+  <script type="module" src="./app.js?v=1d689278faacd37f"></script>
   <title>Подход — дневник тренировок</title>
 </head>
 <body>
@@ -26,6 +26,13 @@
           <h1 id="record-title">Запись</h1>
           <button id="open-templates" class="template-launch" type="button"><span>Шаблоны тренировок</span><span aria-hidden="true">↗</span></button>
         </div>
+        <div class="visit-bar">
+          <button type="button" id="visit-history-link" class="visit-overview">
+            <span>На этой неделе</span><strong id="visit-count" aria-live="polite">0 посещений</strong>
+          </button>
+          <button type="button" id="check-in" class="visit-button" disabled>Я в зале</button>
+        </div>
+        <p id="visit-error" class="error" role="alert" hidden></p>
         <div class="segments" id="record-mode" role="group" aria-label="Что записать">
           <button type="button" data-mode="workout" aria-pressed="true">Тренировка</button>
           <button type="button" data-mode="body" aria-pressed="false">Вес тела</button>
@@ -120,6 +127,12 @@
 
       <section id="journal-page" aria-labelledby="journal-title" hidden>
         <h1 id="journal-title">Журнал</h1>
+        <details id="visit-history" class="visit-history">
+          <summary id="visit-history-title">Посещения зала</summary>
+          <p id="visits-empty" class="visit-hint">Нажми «Я в зале» на экране записи. Здесь появятся даты посещений.</p>
+          <div id="visit-weeks"></div>
+          <p id="visit-history-error" class="error" role="alert" hidden></p>
+        </details>
         <p id="journal-empty" class="empty" hidden>Здесь появятся сохранённые записи. Добавь первый результат во вкладке «Запись».</p>
         <div id="journal-list"></div>
         <details class="backup">
