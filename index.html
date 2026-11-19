@@ -9,8 +9,8 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./style.css?v=609d77ffe9ab44e7">
-  <script type="module" src="./app.js?v=609d77ffe9ab44e7"></script>
+  <link rel="stylesheet" href="./style.css?v=02feaf63eda50a04">
+  <script type="module" src="./app.js?v=02feaf63eda50a04"></script>
   <title>Подход — дневник тренировок</title>
 </head>
 <body>
@@ -21,13 +21,16 @@
     </header>
     <main>
       <section id="record-page" aria-labelledby="record-title">
-        <h1 id="record-title">Запись</h1>
+        <div class="record-cover">
+          <span class="weight-plate" aria-hidden="true"></span>
+          <h1 id="record-title">Запись</h1>
+          <button id="open-templates" class="template-launch" type="button"><span>Шаблоны тренировок</span><span aria-hidden="true">↗</span></button>
+        </div>
         <div class="segments" id="record-mode" role="group" aria-label="Что записать">
           <button type="button" data-mode="workout" aria-pressed="true">Тренировка</button>
           <button type="button" data-mode="body" aria-pressed="false">Вес тела</button>
         </div>
         <div id="workout-plans">
-          <button id="open-templates" class="template-launch" type="button"><span>Шаблоны тренировок</span><span aria-hidden="true">↗</span></button>
           <section id="active-workout" class="workout-plan" aria-labelledby="workout-name" hidden>
             <div class="plan-heading"><h2 id="workout-name"></h2><span id="workout-count"></span></div>
             <progress id="workout-progress" aria-label="Выполнение тренировки"></progress>
@@ -40,7 +43,7 @@
         <form id="record-form" novalidate>
           <div class="surface exercise-card workout-picker">
             <div class="picker-row"><label class="row"><span>Группа</span><select id="group" required aria-label="Группа мышц"></select></label><button type="button" class="picker-action" id="manage-group" aria-label="Управление группами">•••</button></div>
-            <div class="picker-row"><label class="row"><span>Упражнение</span><select id="exercise" required aria-label="Упражнение"></select></label><button type="button" class="picker-action" id="manage-exercise" aria-label="Управление упражнениями">•••</button></div>
+            <div class="picker-row exercise-choice"><label class="row"><span>Упражнение</span><select id="exercise" required aria-label="Упражнение"></select></label><button type="button" class="picker-action" id="manage-exercise" aria-label="Управление упражнениями">•••</button></div>
             <label id="name-row" class="row" hidden><span>Название</span><input id="exercise-name" maxlength="70" placeholder="Введи название" autocomplete="off"></label>
           </div>
           <button type="button" id="empty-group-add" class="secondary" hidden>Добавить упражнение</button>

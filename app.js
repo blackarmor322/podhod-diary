@@ -373,7 +373,7 @@ function setMode(page, mode) {
     recordMode = mode;
     byId('record-form').hidden = byId('notice').hidden = body;
     byId('body-form').hidden = !body;
-    byId('workout-plans').hidden = body;
+    byId('workout-plans').hidden = byId('open-templates').hidden = body;
     clearAchievement();
     byId('record-title').textContent = (body ? editingBody : editing) ? 'Редактировать' : 'Запись';
     renderRecordInsights();
